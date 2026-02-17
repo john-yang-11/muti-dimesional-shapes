@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Shape Visualizer</title>
+    <style>
+        body { 
+            background: #000; 
+            color: #fff; 
+            font-family: Arial; 
+            margin: 0; 
+            padding: 20px;
+            user-select: none;
+        }
+        #canvas { 
+            border: 1px solid #333; 
+            display: block; 
+            margin: 20px auto;
+            cursor: grab;
+        }
+        #canvas:active { cursor: grabbing; }
+        .controls { 
+            text-align: center; 
+            margin: 20px;
+        }
+        button, select, input { 
+            margin: 5px; 
+            padding: 10px;
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            cursor: pointer;
+        }
+        button:hover { background: #555; }
+        #info { text-align: center; margin: 10px; }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">N-Dimensional Shape Visualizer</h1>
+    
+    <div class="controls">
+        <select id="shape">
+            <option value="hypercube">Hypercube</option>
+            <option value="simplex">Simplex</option>
+            <option value="cross_polytope">Cross Polytope</option>
+            <option value="hypersphere">Hypersphere</option>
+        </select>
+        <input type="number" id="dimension" min="2" max="10" value="3">
+        <button onclick="generate()">Generate</button>
+        <button onclick="toggleAuto()">Auto-Rotate</button>
+        <button onclick="reset()">Reset</button>
+    </div>
+    
+    <div id="info">Click Generate to start</div>
+    
+    <canvas id="canvas" width="600" height="400"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const info = document.getElementById('info');
+        
+        let vertices = [];
+        let edges = [];
+        let rotation = {};
+        let autoRotate = false;
+        let isDragging = false;
+        let lastX = 0, lastY = 0;
+        let currentShape = 'hypercube';
+        let currentDim = 3;
+        
+        // Simple shape generators
+        function makeHypercube(n) {
+            const verts = [];
+            const edgs = [];
+            for (let i = 0; i < Math.pow(2, n); i++) {
+                const v = [];
+                for (let j = 0; j < n; j++) {
+                    v.push((i >> j) & 1 ? 1 : -1);
+                }
+                verts.push(v);
+            }
+            for (let i = 0; i < verts.length; i++) {
+                for (let j = i + 1; j < verts.length; j++) {
+                    let diff = 0;
+                    for (let k = 0; k < n; k++) {
+                        if (verts[i][k] !== verts[j][k]) diff++;
+                    }
+                    if (diff === 1) edgs.push([i, j]);
+                }
+            }
+            return {verts, edgs};
+        }
+        
+        function makeSimplex(n) {
+            const verts = [];
+            const edgs = [];
+            for (let i = 0; i <= n; i++) {
+                const v = new Array(n).fill(-1);
+                if (i > 0) v[i-1] = n;
+                for (let j = 0; j < n; j++) v[j] /= n;
+                verts.push(v);
+            }
+            for (let i = 0; i < verts.length; i++) {
+                for (let j = i + 1; j < verts.length; j++) {
+                    edgs.push([i, j]);
+                }
+            }
+            return {verts, edgs};
+        }
+        
+        function makeCrossPolytope(n) {
+            const verts = [];
+            const edgs = [];
+            for (let i = 0; i < n; i++) {
+                const v1 = new Array(n).fill(0);
+                const v2 = new Array(n).fill(0);
+                v1[i] = 1; v2[i] = -1;
+                verts.push(v1, v2);
+            }
+            for (let i = 0; i < verts.length; i++) {
+                for (let j = i + 1; j < verts.length; j++) {
+                    let opposite = false;
+                    for (let k = 0; k < n; k++) {
+                        if ((i === 2*k && j === 2*k+1) || (i === 2*k+1 && j === 2*k)) {
+                            opposite = true; break;
+                        }
+                    }
+                    if (!opposite) edgs.push([i, j]);
+                }
+            }
+            return {verts, edgs};
+        }
+        
+        function makeHypersphere(n, points = 30) {
+            const verts = [];
+            const edgs = [];
+            for (let i = 0; i < points; i++) {
+                const v = [];
+                let sum = 0;
+                for (let j = 0; j < n; j++) {
+                    const val = Math.random() * 2 - 1;
+                    v.push(val);
+                    sum += val * val;
+                }
+                const norm = Math.sqrt(sum);
+                for (let j = 0; j < n; j++) v[j] /= norm;
+                verts.push(v);
+            }
+            for (let i = 0; i < verts.length; i++) {
+                for (let j = i + 1; j < verts.length; j++) {
+                    let dist = 0;
+                    for (let k = 0; k < n; k++) {
+                        const diff = verts[i][k] - verts[j][k];
+                        dist += diff * diff;
+                    }
+                    if (Math.sqrt(dist) < 0.3) edgs.push([i, j]);
+                }
+            }
+            return {verts, edgs};
+        }
+        
+        function generate() {
+            currentShape = document.getElementById('shape').value;
+            currentDim = parseInt(document.getElementById('dimension').value);
+            rotation = {};
+            
+            let result;
+            switch(currentShape) {
+                case 'hypercube': result = makeHypercube(currentDim); break;
+                case 'simplex': result = makeSimplex(currentDim); break;
+                case 'cross_polytope': result = makeCrossPolytope(currentDim); break;
+                case 'hypersphere': result = makeHypersphere(currentDim); break;
+            }
+            
+            vertices = result.verts;
+            edges = result.edgs;
+            
+            info.innerHTML = `${currentShape} ${currentDim}D: ${vertices.length} vertices, ${edges.length} edges`;
+        }
+        
+        function rotatePoint(point, angles) {
+            let p = [...point];
+            for (let [key, angle] of Object.entries(angles)) {
+                const [a1, a2] = key.split(',').map(Number);
+                const c = Math.cos(angle), s = Math.sin(angle);
+                const x1 = p[a1] * c - p[a2] * s;
+                const x2 = p[a1] * s + p[a2] * c;
+                p[a1] = x1; p[a2] = x2;
+            }
+            return p;
+        }
+        
+        function project(point) {
+            if (point.length <= 2) return [point[0] || 0, point[1] || 0];
+            const last = point[point.length - 1];
+            const factor = 5 / Math.max(5 - last, 0.1);
+            return [point[0] * factor, point[1] * factor];
+        }
+        
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            if (vertices.length === 0) return;
+            
+            // Apply rotation and projection
+            const projected = vertices.map(v => project(rotatePoint(v, rotation)));
+            
+            // Scale
+            let scale = 100;
+            if (currentDim > 5) scale = 100 - (currentDim - 5) * 10;
+            scale = Math.max(50, scale);
+            
+            const colors = {
+                hypercube: '#64c8ff',
+                simplex: '#ff9632', 
+                cross_polytope: '#32c896',
+                hypersphere: '#c832c8'
+            };
+            
+            // Draw edges
+            ctx.strokeStyle = colors[currentShape] || '#fff';
+            ctx.lineWidth = 2;
+            edges.forEach(edge => {
+                const [i, j] = edge;
+                const [x1, y1] = projected[i];
+                const [x2, y2] = projected[j];
+                ctx.beginPath();
+                ctx.moveTo(x1 * scale + canvas.width/2, y1 * scale + canvas.height/2);
+                ctx.lineTo(x2 * scale + canvas.width/2, y2 * scale + canvas.height/2);
+                ctx.stroke();
+            });
+            
+            // Draw vertices
+            ctx.fillStyle = '#fff';
+            projected.forEach(p => {
+                const [x, y] = p;
+                ctx.beginPath();
+                ctx.arc(x * scale + canvas.width/2, y * scale + canvas.height/2, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function animate() {
+            if (autoRotate && vertices.length > 0) {
+                if (currentDim >= 2) rotation['0,1'] = (rotation['0,1'] || 0) + 0.01;
+                if (currentDim >= 3) rotation['1,2'] = (rotation['1,2'] || 0) + 0.007;
+            }
+            draw();
+            requestAnimationFrame(animate);
+        }
+        
+        function toggleAuto() {
+            autoRotate = !autoRotate;
+            info.innerHTML += autoRotate ? ' [AUTO-ROTATE ON]' : ' [AUTO-ROTATE OFF]';
+        }
+        
+        function reset() {
+            rotation = {};
+            info.innerHTML += ' [RESET]';
+        }
+        
+        // Mouse events - super simple
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            autoRotate = false;
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const dx = e.clientX - lastX;
+                const dy = e.clientY - lastY;
+                
+                if (currentDim >= 2) rotation['0,1'] = (rotation['0,1'] || 0) + dx * 0.01;
+                if (currentDim >= 3) rotation['1,2'] = (rotation['1,2'] || 0) + dy * 0.01;
+                
+                lastX = e.clientX;
+                lastY = e.clientY;
+            }
+        });
+        
+        // Prevent default drag
+        canvas.addEventListener('dragstart', (e) => e.preventDefault());
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        // Start
+        generate();
+        animate();
+    </script>
+</body>
+</html>

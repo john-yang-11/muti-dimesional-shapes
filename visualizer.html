@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N-Dimensional Shape Visualizer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: #1a1a1a;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        canvas {
+            border: 1px solid #333;
+            cursor: grab;
+            background: #000;
+        }
+        
+        canvas:active {
+            cursor: grabbing;
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        select, input, button {
+            width: 100%;
+            padding: 8px;
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+        }
+        
+        button {
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #555;
+        }
+        
+        button:active {
+            background: #777;
+        }
+        
+        .info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(26, 26, 26, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            min-width: 200px;
+        }
+        
+        .status {
+            color: #aaa;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        h1 {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        h2 {
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h1>Shape Visualizer</h1>
+            
+            <div class="control-group">
+                <label for="shape">Shape Type</label>
+                <select id="shape">
+                    <option value="hypercube">Hypercube</option>
+                    <option value="simplex">Simplex</option>
+                    <option value="cross_polytope">Cross Polytope</option>
+                    <option value="hypersphere">Hypersphere</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="dimension">Dimensions</label>
+                <input type="range" id="dimension" min="2" max="15" value="3">
+                <div class="status">Dimension: <span id="dimensionValue">3</span></div>
+            </div>
+            
+            <div class="control-group">
+                <button id="generateBtn">Generate Shape</button>
+                <button id="autoRotateBtn">Toggle Auto-Rotate</button>
+                <button id="resetBtn">Reset View</button>
+            </div>
+            
+            <div class="control-group">
+                <label for="sensitivity">Mouse Sensitivity</label>
+                <input type="range" id="sensitivity" min="0.001" max="0.05" step="0.001" value="0.01">
+                <div class="status">Sensitivity: <span id="sensitivityValue">0.01</span></div>
+            </div>
+            
+            <div class="control-group">
+                <h2>Controls</h2>
+                <div class="status">
+                    • Click and drag to rotate<br>
+                    • Use sliders to adjust settings<br>
+                    • Auto-rotate for animation
+                </div>
+            </div>
+        </div>
+        
+        <div class="main-area">
+            <canvas id="canvas" width="800" height="600"></canvas>
+            
+            <div class="info-panel">
+                <div id="shapeInfo">Select a shape to begin</div>
+                <div class="status" id="statusText">Ready</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        let vertices = [];
+        let edges = [];
+        let rotationAngles = {};
+        let autoRotate = false;
+        let mouseDragging = false;
+        let lastMousePos = null;
+        let mouseSensitivity = 0.01;
+        let currentShape = 'hypercube';
+        let currentDimension = 3;
+        let animationId = null;
+        
+        // Shape colors
+        const colors = {
+            hypercube: { vertex: '#ffffff', edge: '#64c8ff' },
+            simplex: { vertex: '#ffc864', edge: '#ff9632' },
+            cross_polytope: { vertex: '#64ffc8', edge: '#32c896' },
+            hypersphere: { vertex: '#ff64ff', edge: '#c832c8' }
+        };
+        
+        // Shape generation functions
+        function generateHypercube(n) {
+            const verts = [];
+            const edges = [];
+            const numVertices = Math.pow(2, n);
+            
+            for (let i = 0; i < numVertices; i++) {
+                const vertex = [];
+                for (let j = 0; j < n; j++) {
+                    vertex.push((i >> j) & 1 ? 1 : -1);
+                }
+                verts.push(vertex);
+            }
+            
+            for (let i = 0; i < verts.length; i++) {
+                for (let j = i + 1; j < verts.length; j++) {
+                    let diffCount = 0;
+                    for (let k = 0; k < n; k++) {
+                        if (verts[i][k] !== verts[j][k]) diffCount++;
+                    }
+                    if (diffCount === 1) edges.push([i, j]);
+                }
+            }
+            
+            return { vertices: verts, edges: edges };
+        }
+        
+        function generateSimplex(n) {
+            const verts = [];
+            const edges = [];
+            
+            for (let i = 0; i <= n; i++) {
+                const vertex = new Array(n).fill(-1);
+                if (i > 0) vertex[i - 1] = n;
+                // Normalize
+                for (let j = 0; j < n; j++) vertex[j] /= n;
+                verts.push(vertex);
+            }
+            
+            for (let i = 0; i < verts.length; i++) {
+                for (let j = i + 1; j < verts.length; j++) {
+                    edges.push([i, j]);
+                }
+            }
+            
+            return { vertices: verts, edges: edges };
+        }
+        
+        function generateCrossPolytope(n) {
+            const verts = [];
+            const edges = [];
+            
+            for (let i = 0; i < n; i++) {
+                const posVertex = new Array(n).fill(0);
+                const negVertex = new Array(n).fill(0);
+                posVertex[i] = 1;
+                negVertex[i] = -1;
+                verts.push(posVertex, negVertex);
+            }
+            
+            for (let i = 0; i < verts.length; i++) {
+                for (let j = i + 1; j < verts.length; j++) {
+                    let isOpposite = false;
+                    for (let k = 0; k < n; k++) {
+                        if ((i === 2 * k && j === 2 * k + 1) || 
+                            (i === 2 * k + 1 && j === 2 * k)) {
+                            isOpposite = true;
+                            break;
+                        }
+                    }
+                    if (!isOpposite) edges.push([i, j]);
+                }
+            }
+            
+            return { vertices: verts, edges: edges };
+        }
+        
+        function generateHypersphere(n, numPoints = 50) {
+            const verts = [];
+            const edges = [];
+            
+            for (let i = 0; i < numPoints; i++) {
+                const point = [];
+                let sum = 0;
+                
+                // Generate random normal distribution
+                for (let j = 0; j < n; j++) {
+                    const val = gaussianRandom();
+                    point.push(val);
+                    sum += val * val;
+                }
+                
+                // Normalize to unit sphere
+                const norm = Math.sqrt(sum);
+                for (let j = 0; j < n; j++) {
+                    point[j] = point[j] / norm;
+                }
+                verts.push(point);
+            }
+            
+            // Connect nearby points
+            for (let i = 0; i < verts.length; i++) {
+                for (let j = i + 1; j < verts.length; j++) {
+                    let distance = 0;
+                    for (let k = 0; k < n; k++) {
+                        const diff = verts[i][k] - verts[j][k];
+                        distance += diff * diff;
+                    }
+                    distance = Math.sqrt(distance);
+                    
+                    if (distance <= 0.3) {
+                        edges.push([i, j]);
+                    }
+                }
+            }
+            
+            return { vertices: verts, edges: edges };
+        }
+        
+        function gaussianRandom() {
+            let u = 0, v = 0;
+            while (u === 0) u = Math.random();
+            while (v === 0) v = Math.random();
+            return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+        
+        function generateShape() {
+            const shape = document.getElementById('shape').value;
+            const dimension = parseInt(document.getElementById('dimension').value);
+            
+            currentShape = shape;
+            currentDimension = dimension;
+            rotationAngles = {};
+            
+            let result;
+            switch (shape) {
+                case 'hypercube':
+                    result = generateHypercube(dimension);
+                    break;
+                case 'simplex':
+                    result = generateSimplex(dimension);
+                    break;
+                case 'cross_polytope':
+                    result = generateCrossPolytope(dimension);
+                    break;
+                case 'hypersphere':
+                    result = generateHypersphere(dimension, Math.min(50, Math.pow(2, dimension)));
+                    break;
+            }
+            
+            vertices = result.vertices;
+            edges = result.edges;
+            
+            // Update info
+            const info = document.getElementById('shapeInfo');
+            info.innerHTML = `
+                <strong>${shape.charAt(0).toUpperCase() + shape.slice(1)} (${dimension}D)</strong><br>
+                Vertices: ${vertices.length}<br>
+                Edges: ${edges.length}
+            `;
+            
+            document.getElementById('statusText').textContent = 'Shape generated';
+        }
+        
+        function createRotationMatrix(n, axis1, axis2, angle) {
+            const matrix = Array(n).fill().map(() => Array(n).fill(0));
+            
+            for (let i = 0; i < n; i++) matrix[i][i] = 1;
+            
+            matrix[axis1][axis1] = Math.cos(angle);
+            matrix[axis2][axis2] = Math.cos(angle);
+            matrix[axis1][axis2] = -Math.sin(angle);
+            matrix[axis2][axis1] = Math.sin(angle);
+            
+            return matrix;
+        }
+        
+        function rotatePoint(point, matrix) {
+            const result = [];
+            for (let i = 0; i < matrix.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < point.length; j++) {
+                    sum += point[j] * matrix[j][i];
+                }
+                result.push(sum);
+            }
+            return result;
+        }
+        
+        function projectPoint(point) {
+            if (point.length <= 2) {
+                return [point[0] || 0, point[1] || 0];
+            }
+            
+            const lastCoordinate = point[point.length - 1];
+            const distance = 5.0;
+            const factor = distance / Math.max(distance - lastCoordinate, 0.1);
+            
+            return [point[0] * factor, point[1] * factor];
+        }
+        
+        function render() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+            
+            if (vertices.length === 0) return;
+            
+            // Apply rotations
+            const rotatedVertices = vertices.map(vertex => {
+                let rotated = [...vertex];
+                for (const [axis1, axis2] of Object.keys(rotationAngles)) {
+                    const [a1, a2] = axis1.split(',').map(Number);
+                    const angle = rotationAngles[axis1];
+                    const matrix = createRotationMatrix(rotated.length, a1, a2, angle);
+                    rotated = rotatePoint(rotated, matrix);
+                }
+                return rotated;
+            });
+            
+            // Project to 2D
+            const projectedPoints = rotatedVertices.map(vertex => projectPoint(vertex));
+            
+            // Calculate scale
+            let scale;
+            if (currentShape === 'hypersphere') {
+                scale = Math.max(100, 400 - (currentDimension * 3));
+            } else if (currentShape === 'simplex') {
+                scale = Math.max(80, 350 - (currentDimension * 2.5));
+            } else if (currentShape === 'cross_polytope') {
+                scale = Math.max(90, 380 - (currentDimension * 2.8));
+            } else {
+                scale = Math.max(50, 300 - (currentDimension * 2));
+            }
+            
+            const shapeColors = colors[currentShape];
+            
+            // Draw edges
+            ctx.strokeStyle = shapeColors.edge;
+            ctx.lineWidth = currentShape === 'simplex' ? 3 : currentShape === 'hypersphere' ? 1 : 2;
+            
+            edges.forEach(edge => {
+                const [i, j] = edge;
+                const [x1, y1] = projectedPoints[i];
+                const [x2, y2] = projectedPoints[j];
+                
+                ctx.beginPath();
+                ctx.moveTo(x1 * scale + width/2, y1 * scale + height/2);
+                ctx.lineTo(x2 * scale + width/2, y2 * scale + height/2);
+                ctx.stroke();
+            });
+            
+            // Draw vertices
+            ctx.fillStyle = shapeColors.vertex;
+            const vertexRadius = currentShape === 'hypersphere' ? 2 : currentShape === 'simplex' ? 5 : 4;
+            
+            projectedPoints.forEach(point => {
+                const [x, y] = point;
+                ctx.beginPath();
+                ctx.arc(x * scale + width/2, y * scale + height/2, vertexRadius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function animate() {
+            if (autoRotate && vertices.length > 0) {
+                for (let i = 0; i < Math.min(currentDimension - 1, 3); i++) {
+                    const key = `${i},${i + 1}`;
+                    const speedFactor = Math.max(0.1, 1.0 - (i * 0.3));
+                    rotationAngles[key] = (rotationAngles[key] || 0) + 0.01 * speedFactor;
+                }
+            }
+            
+            render();
+            animationId = requestAnimationFrame(animate);
+        }
+        
+        function toggleAutoRotate() {
+            autoRotate = !autoRotate;
+            document.getElementById('statusText').textContent = autoRotate ? 'Auto-rotate ON' : 'Auto-rotate OFF';
+        }
+        
+        function resetRotation() {
+            rotationAngles = {};
+            document.getElementById('statusText').textContent = 'View reset';
+        }
+        
+        // Event listeners
+        document.getElementById('generateBtn').addEventListener('click', generateShape);
+        document.getElementById('autoRotateBtn').addEventListener('click', toggleAutoRotate);
+        document.getElementById('resetBtn').addEventListener('click', resetRotation);
+        
+        document.getElementById('dimension').addEventListener('input', (e) => {
+            document.getElementById('dimensionValue').textContent = e.target.value;
+        });
+        
+        document.getElementById('sensitivity').addEventListener('input', (e) => {
+            mouseSensitivity = parseFloat(e.target.value);
+            document.getElementById('sensitivityValue').textContent = mouseSensitivity.toFixed(3);
+        });
+        
+        // Mouse controls - simplified and more robust
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                mouseDragging = true;
+                lastMousePos = [e.clientX, e.clientY];
+                autoRotate = false;
+                canvas.style.cursor = 'grabbing';
+            }
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            mouseDragging = false;
+            lastMousePos = null;
+            canvas.style.cursor = 'grab';
+        });
+        
+        canvas.addEventListener('mouseleave', () => {
+            mouseDragging = false;
+            lastMousePos = null;
+            canvas.style.cursor = 'grab';
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (mouseDragging && lastMousePos) {
+                const currentPos = [e.clientX, e.clientY];
+                const dx = currentPos[0] - lastMousePos[0];
+                const dy = currentPos[1] - lastMousePos[1];
+                
+                if (currentDimension >= 2) {
+                    rotationAngles['0,1'] = (rotationAngles['0,1'] || 0) + dx * mouseSensitivity;
+                }
+                if (currentDimension >= 3) {
+                    rotationAngles['1,2'] = (rotationAngles['1,2'] || 0) + dy * mouseSensitivity;
+                }
+                
+                lastMousePos = currentPos;
+            }
+        });
+        
+        // Prevent default drag behavior
+        canvas.addEventListener('dragstart', (e) => e.preventDefault());
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        // Initialize
+        generateShape();
+        animate();
+    </script>
+</body>
+</html>
